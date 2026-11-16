@@ -1,0 +1,12 @@
+# Python 캐시 및 임시 파일
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+*.bak
+
+# 데이터셋 및 내보내기 산출물 (용량 관리)
+dataset/*.npz
+dataset/backup_test/
+collector/exports/
+collector/preview.png
