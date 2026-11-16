@@ -11,6 +11,7 @@ Pirrari/
 │   ├── check_data.py         # 수집된 데이터셋 통계 및 미리보기 생성
 │   ├── export_npz.py         # .npz 데이터셋을 이미지/영상/HTML로 내보내기
 │   ├── collect.py            # UDP 원격 수집 스크립트
+│   ├── sync_gdrive.py        # 필요 시 dataset/을 Google Drive로 업로드
 │   └── verify_wifi_safety.py # 네트워크 단절 안전 정지 검증 스크립트
 └── dataset/                  # 수집된 .npz 파일 저장 경로
 ```
@@ -44,6 +45,15 @@ python3 export_npz.py
 
 ```bash
 python3 export_npz.py 20261116_140000_000.npz
+```
+
+### 4. 데이터셋을 Google Drive에 올리기 (수동 업로드)
+
+`rclone config`로 `gdrive` 리모트를 1회 등록한 뒤, 필요할 때만 아래 명령어를 실행하여 `dataset/`의 `.npz` 파일들을 업로드할 수 있습니다.
+
+```bash
+cd /home/pi/Pirrari/collector
+python3 sync_gdrive.py
 ```
 
 ---
