@@ -597,11 +597,15 @@ def main():
                     break
 
             # 2. 카메라 이미지 획득 및 State 생성
-            frame = cam.get()
-            if frame is not None:
-                small = cv2.resize(frame, (IMG_SIZE, IMG_SIZE))
-                small = cv2.cvtColor(small, cv2.COLOR_BGR2RGB).transpose(2, 0, 1)
-                buf.append(small)
+            # 정지/후진(3) 중에는 버퍼를 비워 재주행 시 이전 흐름이 5프레임에 섞이지 않도록 방지
+            if current_action_code in (0, 1, 2):
+                frame = cam.get()
+                if frame is not None:
+                    small = cv2.resize(frame, (IMG_SIZE, IMG_SIZE))
+                    small = cv2.cvtColor(small, cv2.COLOR_BGR2RGB).transpose(2, 0, 1)
+                    buf.append(small)
+            else:
+                buf.clear()
 
             # 3. 데이터 기록 (전진=0, 우회전=1, 좌회전=2만 기록 — 정지/후진=3은 자동 제외)
             if recording and len(buf) == N_FRAMES and current_action_code in (0, 1, 2):
