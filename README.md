@@ -74,20 +74,34 @@ python3 export_npz.py 20261116_140000_000.npz
 
 ---
 
-## GitHub 협업 가이드 (본인 계정으로 커밋 남기기)
+## GitHub 사용 방법 (다운로드 및 업로드)
+
+### 1. 처음 내려받기 (새 PC / 새 환경)
+
+```bash
+git clone https://github.com/bumblby21/Pirrari.git
+cd Pirrari
+```
+
+### 2. 최신 코드 내려받기 (이미 폴더가 있을 때)
+
+작업 시작 전 다른 팀원이 올린 최신 변경 사항을 반영합니다.
+
+```bash
+cd /home/pi/Pirrari
+git pull origin main
+```
+
+### 3. 수정 후 GitHub에 올리기 (본인 계정으로 커밋 남기기)
 
 라즈베리파이 공용 환경에서 코드를 수정한 뒤 본인 이름으로 커밋 기록을 남기려면 `--author` 옵션을 사용합니다.
 
 ```bash
 cd /home/pi/Pirrari
+git status
 git add .
 git commit --author="본인이름 <본인GitHub이메일>" -m "작업 내용"
-git push
+git push origin main
 ```
 
-최신 변경 사항을 먼저 받아올 때는 아래 명령어를 실행합니다.
-
-```bash
-cd /home/pi/Pirrari
-git pull
-```
+- 다른 팀원이 먼저 코드를 올렸을 때는 `git pull origin main`으로 먼저 최신 내용을 받은 뒤 `git push origin main`을 실행합니다.
