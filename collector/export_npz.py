@@ -34,7 +34,8 @@ ACTION_NAMES = {
 
 def choose_target_file():
     """인자가 있으면 인자 파싱, 없으면 대화형 번호 선택"""
-    npz_files = sorted(glob.glob(os.path.join(DATA_DIR, "*.npz")))
+    all_npz = sorted(glob.glob(os.path.join(DATA_DIR, "**", "*.npz"), recursive=True))
+    npz_files = [p for p in all_npz if "backup_test" not in os.path.relpath(p, DATA_DIR).split(os.sep)]
 
     # 1. 커맨드라인 인자로 전달된 경우
     if len(sys.argv) > 1:
@@ -67,7 +68,7 @@ def choose_target_file():
             cnt = len(d["actions"])
         except Exception:
             cnt = "?"
-        fname = os.path.basename(f)
+        fname = os.path.relpath(f, DATA_DIR)
         print(f"  [{idx:>2}] {fname:<30} ({cnt}개 샘플)")
 
     print(f"  [ A] 전체 파일 모두 합쳐서 변환")

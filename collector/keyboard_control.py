@@ -5,7 +5,7 @@ Raspbot 키보드 제어 및 데이터 수집 프로그램 (네트워크 단절 
 경로: /home/pi/Pirrari/collector/keyboard_control.py
 
 [조작 편의성 및 필수 안전 요구사항]
-✓ 1. 조작 편의: 키를 계속 누르고 있을 필요 없이 방향키 1회 입력으로 연속 주행 가능
+✓ 1. 조작 방식: 방향키(또는 WASD)를 누르고 있는 동안만 주행, 손을 떼면 자동 정지
 ✓ 2. 비상 정지: Space 또는 X 키 입력 시 즉시 모터 정지
 ✓ 3. 정상 종료: Q 또는 ESC 키 입력 시 데이터 저장 후 안전 종료
 ✓ 4. 비정상 종료: Ctrl+C (SIGINT), 강제 종료 (SIGTERM), 창 닫기 (SIGHUP) 시 모터 즉시 0 정지
@@ -37,11 +37,14 @@ DEFAULT_SPEED = 28    # 직진 기본 속도 (작은 맵용 저속: 28)
 DEFAULT_TURN = 25     # 회전 기본 속도 (작은 맵용 저속: 25)
 SPEED_STEP = 2        # 속도 조절 단위 (±2)
 HZ = 10               # 10Hz (초당 10회 루프)
+KEY_HOLD_TIMEOUT = 0.45  # 키를 떼면 자동 정지하기까지의 대기 시간 (초)
+TRIM_FRAMES = 20      # 후진 시 자동 삭제할 직전 프레임 수 (10Hz 기준 20프레임 = 2초)
 N_FRAMES = 5          # 상태(State)로 묶을 최근 프레임 수
 IMG_SIZE = 32         # 32x32 해상도
 SAVE_EVERY = 500      # 500개마다 자동 저장
 TARGET_GOAL = 5000    # 목표 수집 개수
-SAVE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dataset")
+BASE_SAVE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dataset")
+SAVE_DIR = BASE_SAVE_DIR
 
 # ===== 하드웨어 초기화 =====
 bot = Raspbot()
@@ -55,7 +58,7 @@ is_shutting_down = False
 save_lock = threading.Lock()
 
 # ===== 데이터 저장용 전역 변수 =====
-os.makedirs(SAVE_DIR, exist_ok=True)
+os.makedirs(BASE_SAVE_DIR, exist_ok=True)
 session_time = time.strftime("%Y%m%d_%H%M%S")
 states_list = []
 actions_list = []
@@ -69,7 +72,7 @@ def save_npz_data():
         if not states_list:
             return None, 0
         count = len(states_list)
-        file_path = os.path.join(SAVE_DIR, f"{session_time}_{part_num:03d}.npz")
+        file_path = os.path.join(SAVE_DIR, f"{session_time}_{part_num:03d}_{count}.npz")
         np.savez_compressed(
             file_path,
             states=np.array(states_list, dtype=np.uint8),
@@ -80,6 +83,16 @@ def save_npz_data():
         states_list = []
         actions_list = []
         return file_path, count
+
+def trim_recent_data(n=TRIM_FRAMES):
+    """최근 n프레임의 데이터를 삭제 (충돌/이탈 후 후진 시 사용, 스레드 안전)"""
+    with save_lock:
+        if not states_list:
+            return 0
+        removed = min(n, len(states_list))
+        del states_list[-removed:]
+        del actions_list[-removed:]
+        return removed
 
 # ===== 모터 제어 함수 =====
 def set_motor(l, r):
@@ -477,7 +490,19 @@ def get_key_nonblocking(timeout=0.01):
 
 # ===== 메인 함수 =====
 def main():
-    global speed, turn_speed, recording
+    global speed, turn_speed, recording, SAVE_DIR
+
+    # 실행마다 고유 세션 폴더 생성 (인자로 폴더명을 주면 그 이름 사용, 아니면 종료 시 변경 가능)
+    if len(sys.argv) > 1:
+        raw_name = " ".join(sys.argv[1:]).strip()
+        folder_name = raw_name.replace("/", "_").replace("\\", "_").strip() or session_time
+        if folder_name in (".", ".."):
+            folder_name = session_time
+    else:
+        folder_name = session_time
+
+    SAVE_DIR = os.path.join(BASE_SAVE_DIR, folder_name)
+    os.makedirs(SAVE_DIR, exist_ok=True)
 
     stop_motor()
 
@@ -495,12 +520,13 @@ def main():
     banner = (
         "===========================================================\r\n"
         " Raspbot 키보드 주행 & 데이터 수집 (네트워크 안전 시스템 완비)\r\n"
+        f" 저장 폴더: dataset/{os.path.basename(SAVE_DIR)}/\r\n"
         "===========================================================\r\n"
-        " [조작 키 안내] (1회 누르면 계속 주행 유지)\r\n"
+        " [조작 키 안내] (누르고 있는 동안만 주행, 손을 떼면 자동 정지)\r\n"
         "   W 또는 ↑  : 전진 (Action 0)\r\n"
         "   D 또는 →  : 우회전 (Action 1)\r\n"
         "   A 또는 ←  : 좌회전 (Action 2)\r\n"
-        "   S 또는 ↓  : 후진\r\n"
+        "   S 또는 ↓  : 후진 (직전 2초/20프레임 자동 삭제)\r\n"
         "   Space / X : 즉시 멈춤 (Action 3)\r\n"
         "   --------------------------------------------------------\r\n"
         "   R         : 🔴 녹화 시작 / ⚪ 일시 정지 (토글, 정지·후진은 자동 제외)\r\n"
@@ -510,7 +536,7 @@ def main():
         " 🛡️ [네트워크 안전 보호 기능]\r\n"
         "  • 랜선(이더넷) 또는 Wi-Fi 연결 끊김 시 0.3초 내 모터 즉시 0 정지\r\n"
         "  • 창 닫기(SIGHUP), Ctrl+C 시 즉시 정지 및 데이터 안전 저장\r\n"
-        "  • 손을 떼어도 주행은 유지되며, Space/X 키로 정지 가능\r\n"
+        "  • 키에서 손을 떼면 약 0.45초 내 자동으로 모터 정지\r\n"
         "===========================================================\r\n\r\n"
     )
     sys.stdout.write(banner)
@@ -519,6 +545,8 @@ def main():
     buf = deque(maxlen=N_FRAMES)
     saved_msg = ""
     current_count = 0
+    last_move_key_time = 0.0
+    can_trim_on_backward = False
 
     try:
         tty.setraw(fd)
@@ -526,25 +554,47 @@ def main():
         while True:
             t0 = time.time()
 
-            # 1. 키보드 입력 감지 (창 닫힘 감지 포함)
+            # 1. 키보드 입력 감지 (버퍼에 쌓인 반복 입력을 모두 비워 손을 떼자마자 정지하도록 처리)
+            keys = []
             key = get_key_nonblocking(0.01)
-
             if key == 'EOF':
                 emergency_safe_shutdown("터미널 창 강제 종료 또는 통신 두절 (EOF 감지)")
                 break
-
             if key is not None:
+                keys.append(key)
+                while True:
+                    next_key = get_key_nonblocking(0.0)
+                    if next_key == 'EOF':
+                        emergency_safe_shutdown("터미널 창 강제 종료 또는 통신 두절 (EOF 감지)")
+                        return
+                    if next_key is None:
+                        break
+                    keys.append(next_key)
+
+            should_quit = False
+            for key in keys:
                 k = key.lower()
                 if k in ['w', 'up']:
                     move_forward()
+                    last_move_key_time = time.time()
                 elif k in ['s', 'down']:
+                    if recording and can_trim_on_backward:
+                        removed = trim_recent_data(TRIM_FRAMES)
+                        can_trim_on_backward = False
+                        current_count = total_saved_count + len(states_list)
+                        if removed > 0:
+                            saved_msg = f"[후진: 최근 {removed}개 자동삭제]"
                     move_backward()
+                    last_move_key_time = time.time()
                 elif k in ['a', 'left']:
                     turn_left()
+                    last_move_key_time = time.time()
                 elif k in ['d', 'right']:
                     turn_right()
+                    last_move_key_time = time.time()
                 elif k in [' ', 'x']:
                     stop_motor()
+                    last_move_key_time = 0.0
                 elif k == 'r':
                     recording = not recording
                 elif k in ['+', '=']:
@@ -594,7 +644,40 @@ def main():
                                 print("   'y' (예) 또는 'n' (아니오)를 입력해 주세요.")
 
                     emergency_safe_shutdown("사용자 종료 명령 수신 ('Q'/'ESC')", save_data=save_choice)
+
+                    # 저장된 파일이 있으면 종료 시 폴더 이름 지정 가능, 없으면 빈 폴더 정리
+                    saved_files = os.listdir(SAVE_DIR) if os.path.isdir(SAVE_DIR) else []
+                    if saved_files and len(sys.argv) <= 1:
+                        try:
+                            raw_name = input(f"📁 저장된 폴더 이름을 입력하세요 (Enter 시 '{os.path.basename(SAVE_DIR)}' 유지): ").strip()
+                        except (EOFError, KeyboardInterrupt):
+                            raw_name = ""
+                        new_name = raw_name.replace("/", "_").replace("\\", "_").strip()
+                        if new_name and new_name not in (".", "..") and new_name != os.path.basename(SAVE_DIR):
+                            target_dir = os.path.join(BASE_SAVE_DIR, new_name)
+                            if not os.path.exists(target_dir):
+                                os.rename(SAVE_DIR, target_dir)
+                            else:
+                                for fname in saved_files:
+                                    os.replace(os.path.join(SAVE_DIR, fname), os.path.join(target_dir, fname))
+                                os.rmdir(SAVE_DIR)
+                            SAVE_DIR = target_dir
+                            print(f"📂 폴더 저장 완료: dataset/{new_name}/\n")
+                    elif not saved_files and os.path.isdir(SAVE_DIR):
+                        try:
+                            os.rmdir(SAVE_DIR)
+                        except OSError:
+                            pass
+
+                    should_quit = True
                     break
+
+            if should_quit:
+                break
+
+            # 키에서 손을 떼어 KEY_HOLD_TIMEOUT 동안 이동 키 입력이 없으면 자동 정지
+            if current_action_name != "STOP (정지)" and (time.time() - last_move_key_time) > KEY_HOLD_TIMEOUT:
+                stop_motor()
 
             # 2. 카메라 이미지 획득 및 State 생성
             # 정지/후진(3) 중에는 버퍼를 비워 재주행 시 이전 흐름이 5프레임에 섞이지 않도록 방지
@@ -612,6 +695,7 @@ def main():
                 with save_lock:
                     states_list.append(np.stack(buf))
                     actions_list.append(current_action_code)
+                can_trim_on_backward = True
                 current_count = total_saved_count + len(states_list)
 
                 # 500개마다 중간 자동 저장

@@ -23,9 +23,10 @@ def main():
     print("           수집된 Imitation Learning 데이터 점검")
     print("=" * 60)
 
-    npz_files = sorted(glob.glob(os.path.join(DATA_DIR, "*.npz")))
+    all_npz = sorted(glob.glob(os.path.join(DATA_DIR, "**", "*.npz"), recursive=True))
+    npz_files = [p for p in all_npz if "backup_test" not in os.path.relpath(p, DATA_DIR).split(os.sep)]
     if not npz_files:
-        print("❌ data/ 폴더에 저장된 .npz 파일이 없습니다.")
+        print("❌ dataset/ 폴더에 저장된 .npz 파일이 없습니다.")
         return
 
     total_samples = 0
@@ -41,7 +42,7 @@ def main():
             actions = data["actions"]
             n = len(actions)
             total_samples += n
-            file_name = os.path.basename(f)
+            file_name = os.path.relpath(f, DATA_DIR)
             print(f"  - {file_name:<25} : {n:>4}개 샘플 | states: {states.shape}")
 
             for a in actions:
