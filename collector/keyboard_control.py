@@ -35,6 +35,10 @@ from Raspbot_Lib import Raspbot
 # ===== 설정 =====
 DEFAULT_SPEED = 28    # 직진 기본 속도 (작은 맵용 저속: 28)
 DEFAULT_TURN = 25     # 회전 기본 속도 (작은 맵용 저속: 25)
+STRAIGHT_LEFT_OFFSET = 13  # 직진 시 왼쪽 쏠림 보정 (왼쪽 모터 +값, 0이면 보정 없음)
+STRAIGHT_RIGHT_OFFSET = 0  # 직진 시 오른쪽 모터 보정값
+CAMERA_PAN_ANGLE = 90      # 시작 시 카메라 좌우(1번 서보) 원위치 각도
+CAMERA_TILT_ANGLE = 25     # 시작 시 카메라 상하(2번 서보) 원위치 각도
 SPEED_STEP = 2        # 속도 조절 단위 (±2)
 HZ = 10               # 10Hz (초당 10회 루프)
 KEY_HOLD_TIMEOUT = 0.45  # 키를 떼면 자동 정지하기까지의 대기 시간 (초)
@@ -112,7 +116,7 @@ def stop_motor():
 
 def move_forward():
     global current_action_name, current_action_code
-    set_motor(speed, speed)
+    set_motor(speed + STRAIGHT_LEFT_OFFSET, speed + STRAIGHT_RIGHT_OFFSET)
     current_action_name = "FORWARD (전진)"
     current_action_code = 0
 
@@ -133,6 +137,14 @@ def turn_right():
     set_motor(turn_speed, -turn_speed)
     current_action_name = "RIGHT (우회전)"
     current_action_code = 1
+
+def reset_camera_position():
+    """시작 시 카메라 서보를 기본 원위치로 이동"""
+    try:
+        bot.Ctrl_Servo(1, CAMERA_PAN_ANGLE)
+        bot.Ctrl_Servo(2, CAMERA_TILT_ANGLE)
+    except Exception:
+        pass
 
 # ===== 안전 종료 총괄 관리자 (Safety Manager) =====
 def emergency_safe_shutdown(reason="알 수 없음", save_data=True):
@@ -505,6 +517,7 @@ def main():
     os.makedirs(SAVE_DIR, exist_ok=True)
 
     stop_motor()
+    reset_camera_position()
 
     cam = Camera()
     cam.start()
